@@ -105,7 +105,7 @@ function toPoint(hit: NominatimHit, quality: GeoPoint['quality']): GeoPoint {
   }
 }
 
-const wait = (ms: number) => new Promise((r) => setTimeout(r, ms))
+const wait = (ms: number) => new Promise<void>((r) => setTimeout(r, ms))
 
 /** Rate-limited lookups: one request a second at most, per the usage policy. */
 export class Geocoder {
@@ -113,9 +113,14 @@ export class Geocoder {
   private readonly fetcher: Fetcher
   private readonly gapMs: number
 
-  constructor(fetcher: Fetcher = browserFetch, gapMs = 1100) {
+  private readonly retries: number
+  /** Called before each retry; by default waits 3 s, 8 s, 20 s. Also where the app pauses while hidden. */
+  beforeRetry: (attempt: number) => Promise<void> = (attempt) => wait([3000, 8000, 20000][attempt] ?? 20000)
+
+  constructor(fetcher: Fetcher = browserFetch, gapMs = 1100, retries = 3) {
     this.fetcher = fetcher
     this.gapMs = gapMs
+    this.retries = retries
   }
 
   private async search(q: string, near?: LatLng): Promise<NominatimHit | null> {
@@ -125,8 +130,17 @@ export class Geocoder {
     // Near the previous stop: only look within a box around it.
     const box = near ? `&bounded=1&viewbox=${near.lng - NEAR_DEG},${near.lat + NEAR_DEG},${near.lng + NEAR_DEG},${near.lat - NEAR_DEG}` : ''
     const url = `https://nominatim.openstreetmap.org/search?format=jsonv2&countrycodes=au&limit=1&addressdetails=1&accept-language=en${box}&q=${encodeURIComponent(q)}`
-    const hits = await this.fetcher(url)
-    return hits[0] ?? null
+    // A dropped connection or a "slow down" answer shouldn't end the whole run: wait and try again.
+    for (let attempt = 0; ; attempt++) {
+      try {
+        const hits = await this.fetcher(url)
+        return hits[0] ?? null
+      } catch (e) {
+        if (attempt >= this.retries) throw e
+        await this.beforeRetry(attempt)
+        this.last = Date.now()
+      }
+    }
   }
 
   /**

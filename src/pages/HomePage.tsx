@@ -158,7 +158,7 @@ function TripMap() {
       <div className="h-2 overflow-hidden rounded-full bg-stone-100">
         <div className="h-full bg-ochre-500 transition-all" style={{ width: `${(progress.done / Math.max(1, progress.total)) * 100}%` }} />
       </div>
-      <p className="mt-1 text-xs text-stone-500">One a second, as the free map service asks. Keep the app open.</p>
+      <p className="mt-1 text-xs text-stone-500">One a second, as the free map service asks. The screen stays on; if you switch away it pauses and carries on when you come back.</p>
     </div>
   ) : null
 
@@ -198,7 +198,7 @@ function TripMap() {
       <div className="space-y-2 px-2 pb-1">
         <p className="text-sm font-medium">{where}</p>
         {finder}
-        {!progress && !error && missing.length > 0 && (
+        {!progress && missing.length > 0 && (!error || /Find them/.test(error)) && (
           <p className="text-sm text-stone-600">
             {missing.length} stop{missing.length === 1 ? ' isn’t' : 's aren’t'} on the map yet.{' '}
             <button className="font-medium text-ochre-700 underline" onClick={run}>

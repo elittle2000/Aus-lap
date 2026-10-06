@@ -95,6 +95,25 @@ describe('Geocoder', () => {
     expect(await g.locate('Geraldton')).toMatchObject({ quality: 'check' }) // only the road exists: flagged
   })
 
+  it('retries a failed search instead of giving up', async () => {
+    let calls = 0
+    const flaky: Fetcher = async () => {
+      calls++
+      if (calls < 3) throw new Error('Load failed')
+      return [hit(-28.6, 153.6, 'Byron Bay')] as never
+    }
+    const g = new Geocoder(flaky, 0)
+    g.beforeRetry = async () => {}
+    expect(await g.locate('Byron Bay')).toMatchObject({ lat: -28.6 })
+    expect(calls).toBe(3)
+  })
+
+  it('gives up on a search only after the retries run out', async () => {
+    const g = new Geocoder(async () => { throw new Error('Load failed') }, 0, 2)
+    g.beforeRetry = async () => {}
+    await expect(g.locate('Byron Bay')).rejects.toThrow('Load failed')
+  })
+
   it('waits at least the set gap between requests', async () => {
     const { fetcher } = fake({})
     const g = new Geocoder(fetcher, 50)
