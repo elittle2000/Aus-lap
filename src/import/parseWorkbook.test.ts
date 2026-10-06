@@ -74,6 +74,12 @@ describe('parseWorkbook (fixture)', () => {
     expect(p.warnings.join('\n')).toMatch(/unknown priority "Urgent"/)
   })
 
+  it('refuses a workbook with no items or no days, rather than wiping the app', () => {
+    const p = parse(buildWorkbook({ prep: [], days: [] }))
+    expect(p.errors).toEqual(['"Pre-departure Costs" has no items.'])
+    expect(parse(buildWorkbook({ days: [] })).errors).toEqual(['"Itinerary" has no days.'])
+  })
+
   it('fails clearly when a required sheet is missing', () => {
     const p = parseWorkbook({ SheetNames: [], Sheets: {} })
     expect(p.errors).toEqual(['The workbook has no "Pre-departure Costs" sheet.', 'The workbook has no "Itinerary" sheet.'])

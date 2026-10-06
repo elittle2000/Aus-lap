@@ -242,5 +242,9 @@ export function parseWorkbook(wb: XLSX.WorkBook): ParsedWorkbook {
   if (!lapWs) warnings.push(`No "${SHEETS.lapBudget}" sheet, so no on-road budget was imported.`)
   const departureDate = parseDeparture(get(SHEETS.inputs), warnings)
 
+  // An empty sheet would remove everything on import, so refuse it outright.
+  if (prepWs && !prepItems.length && !errors.length) errors.push(`"${SHEETS.prep}" has no items.`)
+  if (itinWs && !days.length && !errors.length) errors.push(`"${SHEETS.itinerary}" has no days.`)
+
   return { departureDate, prepItems, days, locations, budgetLines, errors, warnings }
 }

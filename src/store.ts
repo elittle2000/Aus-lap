@@ -5,6 +5,7 @@ import type { BudgetLine, ChangeEntry, LocationRef, Person, PersonId, PrepItem, 
 import { PREP_STATUS_LABEL } from './domain/types'
 import { resizeStay, type ResizeMode } from './domain/stays'
 import { applyImport } from './import/diff'
+import type { SyncedState } from './sync/ops'
 import type { ParsedWorkbook } from './import/parseWorkbook'
 
 // Step 2: data lives in this browser only (localStorage).
@@ -40,6 +41,8 @@ interface Actions {
   updateSettings: (patch: Partial<Settings>) => void
   importWorkbook: (parsed: ParsedWorkbook, fileName: string, applyDeparture: boolean) => void
   resetAll: () => void
+  /** Replace the shared part of the state with what came from the database. */
+  applyRemote: (synced: SyncedState) => void
 }
 
 const initial: State = {
@@ -98,8 +101,8 @@ function describe(name: string, patch: Record<string, unknown>, people: Person[]
 export const useStore = create<State & Actions>()(
   persist(
     (set, get) => {
-      const log = (entry: Omit<ChangeEntry, 'at' | 'by'>, by: ChangeEntry['by'] = get().settings.me): ChangeEntry[] =>
-        [{ ...entry, at: now(), by }, ...get().changes].slice(0, MAX_CHANGES)
+      const log = (entry: Omit<ChangeEntry, 'id' | 'at' | 'by'>, by: ChangeEntry['by'] = get().settings.me): ChangeEntry[] =>
+        [{ ...entry, id: newId(), at: now(), by }, ...get().changes].slice(0, MAX_CHANGES)
 
       return {
         ...initial,
@@ -181,11 +184,58 @@ export const useStore = create<State & Actions>()(
         },
 
         resetAll: () => set({ ...initial, settings: { ...initial.settings, me: get().settings.me } }),
+
+        applyRemote: (synced) =>
+          set({
+            prepItems: synced.prepItems,
+            stays: synced.stays,
+            archivedStays: synced.archivedStays,
+            changes: synced.changes,
+            budgetLines: synced.budgetLines,
+            locations: synced.locations,
+            lastImport: synced.lastImport as State['lastImport'],
+            settings: { ...get().settings, ...synced.trip },
+          }),
       }
     },
-    { name: 'big-lap', version: 1 },
+    {
+      name: 'big-lap',
+      version: 2,
+      // v1 → v2: change-log entries gained ids (needed to sync them).
+      migrate: (persisted, version) => {
+        const p = persisted as State
+        if (version < 2) p.changes = (p.changes ?? []).map((c) => ({ ...c, id: c.id ?? newId() }))
+        return p
+      },
+    },
   ),
 )
 
 export const useMe = () => useStore((s) => s.settings.me)
 export const personName = (people: Person[], id: string | null | undefined) => (id === 'import' ? 'Spreadsheet import' : (people.find((p) => p.id === id)?.name ?? '—'))
+
+/** The part of the state shared between phones. Keeps object identity so changes can be detected cheaply. */
+const syncedCache = new WeakMap<object, SyncedState>()
+export function syncedOf(s: State): SyncedState {
+  const hit = syncedCache.get(s)
+  if (hit) return hit
+  const v: SyncedState = {
+    prepItems: s.prepItems,
+    stays: s.stays,
+    archivedStays: s.archivedStays,
+    changes: s.changes,
+    trip: tripOf(s.settings),
+    budgetLines: s.budgetLines,
+    locations: s.locations,
+    lastImport: s.lastImport,
+  }
+  syncedCache.set(s, v)
+  return v
+}
+
+const tripCache = new WeakMap<Settings, SyncedState['trip']>()
+function tripOf(settings: Settings) {
+  let t = tripCache.get(settings)
+  if (!t) tripCache.set(settings, (t = { departureDate: settings.departureDate, homeAddress: settings.homeAddress }))
+  return t
+}

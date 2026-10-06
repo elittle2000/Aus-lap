@@ -6,6 +6,7 @@ import { comparePrep, counts, dueState, spendSummary } from '../domain/prep'
 import { PREP_STATUSES, PREP_STATUS_LABEL, PRIORITIES, type PersonId, type PrepItem, type PrepStatus, type Priority } from '../domain/types'
 import { formatMonth, monthKey, type IsoDate } from '../lib/dates'
 import { formatAud, formatAudExact, parseAmount } from '../lib/money'
+import { Receipts } from '../components/Receipts'
 import { Card, Chip, Empty, Field, PrioChip, SectionTitle, Segmented, Sheet } from '../components/ui'
 import { DUE_LABEL, btnPrimary, btnSecondary, cx, inputCls } from '../components/styles'
 
@@ -279,7 +280,7 @@ function PrepEditor({ item, onDone }: { item: PrepItem; onDone: () => void }) {
         <textarea className={inputCls} rows={3} value={notes} onChange={(e) => setNotes(e.target.value)} onBlur={() => save({ notes })} />
       </Field>
 
-      <Field label="Link" hint="A product page or receipt. Photo receipts arrive with the shared database (step 3).">
+      <Field label="Link" hint="A product page or online receipt.">
         <input type="url" className={inputCls} placeholder="https://" value={link} onChange={(e) => setLink(e.target.value)} onBlur={() => save({ link: link.trim() })} />
       </Field>
       {item.link && (
@@ -287,6 +288,8 @@ function PrepEditor({ item, onDone }: { item: PrepItem; onDone: () => void }) {
           {item.link}
         </a>
       )}
+
+      <Receipts item={item} />
 
       {fromSheet ? (
         <p className="text-xs text-stone-500">

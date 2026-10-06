@@ -48,6 +48,8 @@ export interface PrepItem extends Audit {
   owner: PersonId | null
   notes: string
   link: string
+  /** Receipt photos, as paths in the shared file storage. */
+  receipts?: string[]
   /** Set when a re-import no longer finds this row in the spreadsheet. */
   removedFromSheet?: boolean
 }
@@ -102,6 +104,7 @@ export interface LocationRef {
 }
 
 export interface ChangeEntry {
+  id: string
   at: string
   by: PersonId | 'import'
   entity: 'prep' | 'stay' | 'settings' | 'import'

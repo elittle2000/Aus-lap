@@ -2,6 +2,7 @@ import { lazy, Suspense } from 'react'
 import { NavLink, Navigate, Route, Routes } from 'react-router-dom'
 import { cx } from './components/styles'
 import { personName, useStore } from './store'
+import { SyncBadge } from './components/SyncBadge'
 import HomePage from './pages/HomePage'
 import PrepPage from './pages/PrepPage'
 import StaysPage from './pages/StaysPage'
@@ -24,9 +25,12 @@ export default function App() {
     <div className="mx-auto flex min-h-screen max-w-2xl flex-col">
       <header className="sticky top-0 z-30 flex items-center justify-between border-b border-stone-200 bg-sand/95 px-4 py-3 backdrop-blur">
         <span className="font-semibold tracking-tight text-ochre-700">Big Lap</span>
-        <NavLink to="/more" className="text-sm text-stone-500">
-          You: <span className="font-medium text-stone-800">{personName(settings.people, settings.me)}</span>
-        </NavLink>
+        <div className="flex flex-col items-end">
+          <NavLink to="/more" className="text-sm text-stone-500">
+            <span className="font-medium text-stone-800">{personName(settings.people, settings.me)}</span>
+          </NavLink>
+          <SyncBadge />
+        </div>
       </header>
 
       <main className="flex-1 px-4 pb-28 pt-4">
