@@ -1,13 +1,16 @@
-import { useState } from 'react'
+import { lazy, Suspense, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { personName, useStore } from '../store'
 import { useTrip } from '../hooks'
 import { resizeStay, type ResizeMode, type ResizeResult } from '../domain/stays'
 import { BOOKING_REQUIREMENTS, BOOKING_STATUSES, type Stay } from '../domain/types'
+import { needsPoint } from '../map/geocode'
 import { formatDate, formatRange, formatWeekday, tripDayDate } from '../lib/dates'
 import { formatAud, parseAmount } from '../lib/money'
 import { Card, Chip, Field, SectionTitle, Segmented } from '../components/ui'
 import { BOOKING_TONE, btnPrimary, btnSecondary, inputCls } from '../components/styles'
+
+const PlacePicker = lazy(() => import('../map/PlacePicker'))
 
 export default function StayDetailPage() {
   const { id } = useParams()
@@ -79,6 +82,8 @@ export default function StayDetailPage() {
           <TextField label="Notes" multiline value={stay.notes} onSave={(notes) => save({ notes })} />
         </Card>
       )}
+
+      {needsPoint(stay) && <MapPosition stay={stay} />}
 
       <LengthEditor stay={stay} />
 
@@ -237,6 +242,31 @@ function LengthEditor({ stay }: { stay: Stay }) {
           Cancel
         </button>
       </div>
+    </Card>
+  )
+}
+
+function MapPosition({ stay }: { stay: Stay }) {
+  const setStayGeo = useStore((s) => s.setStayGeo)
+  const geo = stay.geo
+  return (
+    <Card className="space-y-2">
+      <SectionTitle right={geo?.state ? <Chip>{geo.state}</Chip> : undefined}>On the map</SectionTitle>
+      {!geo && <p className="text-sm text-stone-600">Not on the map yet. Tap where it is to place it.</p>}
+      {geo?.quality === 'check' && (
+        <div className="flex items-start justify-between gap-2 rounded-lg bg-amber-50 p-2 text-sm text-amber-900 ring-1 ring-amber-200">
+          <span>
+            This is a best guess (<em>{geo.label}</em>). If it's wrong, drag the pin. If it's right:
+          </span>
+          <button className="shrink-0 font-semibold underline" onClick={() => setStayGeo([{ id: stay.id, geo: { ...geo, quality: 'good' } }], `${stay.baseCamp}: map position confirmed`)}>
+            Looks right
+          </button>
+        </div>
+      )}
+      <Suspense fallback={<div className="h-56 animate-pulse rounded-xl bg-stone-200" />}>
+        <PlacePicker stay={stay} />
+      </Suspense>
+      {geo && <p className="text-xs text-stone-500">{geo.quality === 'manual' ? 'Placed by hand' : `Found as: ${geo.label}`}. Drag the pin to move it.</p>}
     </Card>
   )
 }

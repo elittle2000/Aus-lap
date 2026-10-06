@@ -133,6 +133,7 @@ function StayRow({ stay, span, number }: { stay: Stay; span: StaySpan; number?: 
           </span>
           <span className="mt-1.5 flex flex-wrap gap-1.5">
             <Chip tone={BOOKING_TONE[stay.status]}>{stay.status}</Chip>
+            {stay.geo?.state && <Chip>{stay.geo.state}</Chip>}
             {stay.bookingRequirement !== 'Unknown' && <Chip tone={REQUIREMENT_TONE[stay.bookingRequirement]}>{stay.bookingRequirement}</Chip>}
           </span>
         </span>

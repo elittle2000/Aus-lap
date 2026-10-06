@@ -1,4 +1,5 @@
 import type { IsoDate } from '../lib/dates'
+import type { GeoPoint } from '../map/geocode'
 
 export type PersonId = 'ethan' | 'dana'
 
@@ -89,6 +90,8 @@ export interface Stay extends Audit {
   link: string
   cancelBy: IsoDate | null
   notes: string
+  /** Map position, looked up once from the base camp name (or set by hand). */
+  geo?: GeoPoint | null
   removedFromSheet?: boolean
 }
 

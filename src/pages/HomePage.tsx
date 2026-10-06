@@ -1,3 +1,4 @@
+import { lazy, Suspense } from 'react'
 import { Link } from 'react-router-dom'
 import { personName, useStore } from '../store'
 import { useTrip } from '../hooks'
@@ -7,6 +8,12 @@ import { formatDate, formatRange, formatMonth, formatShort } from '../lib/dates'
 import { Card, Chip, Empty, PrioChip, Progress, SectionTitle } from '../components/ui'
 import { DUE_LABEL, btnPrimary, BOOKING_TONE } from '../components/styles'
 import { stayOnDay } from '../domain/stays'
+import { missingPlaces, useFindPlaces } from '../map/useFindPlaces'
+import { needsPoint } from '../map/geocode'
+import { carPosition, routePoints } from '../map/progress'
+
+// The map library is large, so it loads after the rest of the page.
+const RouteMap = lazy(() => import('../map/RouteMap'))
 
 export default function HomePage() {
   const { prepItems, stays, changes, settings } = useStore()
@@ -54,6 +61,8 @@ export default function HomePage() {
         )}
         {trip.phase === 'after' && <p className="text-2xl font-bold">The lap is done. Welcome home!</p>}
       </section>
+
+      <TripMap />
 
       <Card>
         <SectionTitle>Next up</SectionTitle>
@@ -126,5 +135,96 @@ function ActionRow({ a }: { a: Action }) {
         <Chip tone={BOOKING_TONE[a.stay.status]}>{a.stay.status}</Chip>
       </Link>
     </li>
+  )
+}
+
+function TripMap() {
+  const stays = useStore((s) => s.stays)
+  const { spans, dayNumber, daysToGo } = useTrip()
+  const { run, progress, error } = useFindPlaces()
+  const missing = missingPlaces(stays)
+  const toCheck = stays.filter((s) => needsPoint(s) && s.geo?.quality === 'check')
+  const points = routePoints(stays, spans)
+  const car = carPosition(points, dayNumber)
+  const name = (id: string | null | undefined) => stays.find((s) => s.id === id)?.baseCamp ?? ''
+
+  if (!stays.length) return null
+
+  const finder = progress ? (
+    <div>
+      <p className="mb-1 text-sm">
+        Finding places on the map… {progress.done} of {progress.total}
+      </p>
+      <div className="h-2 overflow-hidden rounded-full bg-stone-100">
+        <div className="h-full bg-ochre-500 transition-all" style={{ width: `${(progress.done / Math.max(1, progress.total)) * 100}%` }} />
+      </div>
+      <p className="mt-1 text-xs text-stone-500">One a second, as the free map service asks. Keep the app open.</p>
+    </div>
+  ) : null
+
+  if (!points.length) {
+    return (
+      <Card>
+        <SectionTitle>The route</SectionTitle>
+        {finder ?? (
+          <>
+            <p className="mb-3 text-sm text-stone-600">
+              Put all {missing.length} stops on the map. It looks each one up once (about {Math.ceil((missing.length * 1.5) / 60)} minutes) and both phones get the result.
+            </p>
+            <button className={btnPrimary + ' w-full'} onClick={run}>
+              Put the route on the map
+            </button>
+          </>
+        )}
+        {error && <p className="mt-2 text-sm text-red-700">{error}</p>}
+      </Card>
+    )
+  }
+
+  const where =
+    car?.phase === 'before'
+      ? `Parked at the start: ${points[0].name}. ${daysToGo} days to go.`
+      : car?.phase === 'at-stay'
+        ? `Today: ${name(car.atStayId)}`
+        : car?.phase === 'between'
+          ? `On the road from ${points[car.segment].name} to ${points[car.segment + 1].name}`
+          : 'The lap is done!'
+
+  return (
+    <Card className="space-y-2 p-2">
+      <Suspense fallback={<div className="h-[260px] animate-pulse rounded-xl bg-stone-200" />}>
+        <RouteMap />
+      </Suspense>
+      <div className="space-y-2 px-2 pb-1">
+        <p className="text-sm font-medium">{where}</p>
+        {finder}
+        {!progress && !error && missing.length > 0 && (
+          <p className="text-sm text-stone-600">
+            {missing.length} stop{missing.length === 1 ? ' isn’t' : 's aren’t'} on the map yet.{' '}
+            <button className="font-medium text-ochre-700 underline" onClick={run}>
+              Find {missing.length === 1 ? 'it' : 'them'}
+            </button>
+          </p>
+        )}
+        {error && <p className="text-sm text-red-700">{error}</p>}
+        {toCheck.length > 0 && (
+          <details className="text-sm">
+            <summary className="cursor-pointer text-stone-600">
+              {toCheck.length} place{toCheck.length === 1 ? '' : 's'} to double-check on the map
+            </summary>
+            <ul className="mt-1 list-disc pl-5">
+              {toCheck.map((s) => (
+                <li key={s.id}>
+                  <Link to={`/stays/${s.id}`} className="text-ochre-700 underline">
+                    {s.baseCamp}
+                  </Link>{' '}
+                  <span className="text-stone-500">→ {s.geo?.label}</span>
+                </li>
+              ))}
+            </ul>
+          </details>
+        )}
+      </div>
+    </Card>
   )
 }

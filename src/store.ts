@@ -38,6 +38,8 @@ interface Actions {
   updateStay: (id: string, patch: Partial<Stay>) => void
   resizeStay: (id: string, length: number, mode: ResizeMode) => string | null
   deleteArchivedStay: (id: string) => void
+  /** Save map positions found or set for stays. Logged as one change, not one per stay. */
+  setStayGeo: (positions: { id: string; geo: Stay['geo'] }[], summary: string) => void
   updateSettings: (patch: Partial<Settings>) => void
   importWorkbook: (parsed: ParsedWorkbook, fileName: string, applyDeparture: boolean) => void
   resetAll: () => void
@@ -154,6 +156,16 @@ export const useStore = create<State & Actions>()(
           const how = mode === 'absorb' ? ' (days taken from / given to the next buffer)' : r.tripLengthChange ? `; trip is now ${r.tripLengthChange > 0 ? '+' : ''}${r.tripLengthChange} days` : ''
           set({ stays, changes: log({ entity: 'stay', entityId: id, summary: `${stay.baseCamp}: ${stay.days.length} → ${length} days${how}` }) })
           return null
+        },
+
+        setStayGeo: (positions, summary) => {
+          if (!positions.length) return
+          const byId = new Map(positions.map((p) => [p.id, p.geo]))
+          const me = get().settings.me
+          set({
+            stays: get().stays.map((s) => (byId.has(s.id) ? { ...s, geo: byId.get(s.id), updatedAt: now(), updatedBy: me } : s)),
+            changes: log({ entity: 'stay', entityId: positions.length === 1 ? positions[0].id : null, summary }),
+          })
         },
 
         deleteArchivedStay: (id) => set({ archivedStays: get().archivedStays.filter((s) => s.id !== id) }),
