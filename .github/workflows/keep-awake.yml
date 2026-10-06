@@ -1,5 +1,5 @@
 # Keeps the free Supabase project from pausing during quiet weeks.
-# Needs two repository secrets: SUPABASE_URL and SUPABASE_PUBLISHABLE_KEY (see docs/SETUP.md).
+# Reads the database address and public key from .env.production.
 name: Keep database awake
 on:
   schedule:
@@ -9,10 +9,8 @@ jobs:
   ping:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
       - name: Ping the database
-        env:
-          URL: ${{ secrets.SUPABASE_URL }}
-          KEY: ${{ secrets.SUPABASE_PUBLISHABLE_KEY }}
         run: |
-          if [ -z "$URL" ]; then echo "SUPABASE_URL secret not set yet; skipping"; exit 0; fi
-          curl --fail --silent --show-error -X POST "$URL/rest/v1/rpc/ping" -H "apikey: $KEY" -H "Content-Type: application/json" -d '{}'
+          set -a; . ./.env.production; set +a
+          curl --fail --silent --show-error -X POST "$VITE_SUPABASE_URL/rest/v1/rpc/ping" -H "apikey: $VITE_SUPABASE_PUBLISHABLE_KEY" -H "Content-Type: application/json" -d '{}'
