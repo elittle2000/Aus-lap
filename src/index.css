@@ -1,0 +1,29 @@
+@import 'tailwindcss';
+
+@theme {
+  --color-ochre-50: #fbf6ef;
+  --color-ochre-100: #f5e8d6;
+  --color-ochre-200: #ebcfa8;
+  --color-ochre-500: #c27a2c;
+  --color-ochre-600: #a8631e;
+  --color-ochre-700: #864d18;
+  --color-sand: #f7f4ef;
+  --font-sans: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  background: var(--color-sand);
+  color: #1c1917;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Keep native date inputs readable on iOS */
+input[type='date'] {
+  min-height: 2.5rem;
+}
