@@ -1,17 +1,29 @@
 import { useEffect, useState, type ReactNode } from 'react'
-import type { Session } from '@supabase/supabase-js'
+import type { Session, SupabaseClient } from '@supabase/supabase-js'
 import { supabase } from './lib/supabase'
 import { useStore } from './store'
 import { SyncEngine } from './sync/engine'
-import { Card, Field } from './components/ui'
-import { btnPrimary, btnSecondary, inputCls } from './components/styles'
+import { Card } from './components/ui'
 import type { PersonId } from './domain/types'
+import { confirmedPerson, forgetJoinLink, joinLink, rememberPerson } from './lib/joinLink'
 
-type Gate = { state: 'loading' } | { state: 'signed-out' } | { state: 'not-member'; email: string } | { state: 'ready' }
+// No sign-in screen. Each of us has a private link:
+//   https://…/Aus-lap/?join=<secret>&me=ethan
+// Opening it signs the phone in anonymously (no email, no password) and joins the
+// trip with the secret. The phone then stays in for good. The link is also kept on
+// the phone, so it can quietly rejoin if the session is ever lost.
+
+type Gate = { state: 'loading' } | { state: 'no-access'; reason: 'no-link' | 'bad-link' | 'error'; detail?: string } | { state: 'ready' }
 
 let engine: SyncEngine | null = null
 
-/** Wraps the app: with a database configured, nothing shows until one of us has signed in. */
+/** null person = not joined; error = couldn't ask (e.g. no signal). */
+async function whoAmI(db: SupabaseClient): Promise<{ me: PersonId | null; error: boolean }> {
+  const { data, error } = await db.rpc('current_person')
+  return { me: (data as PersonId | null) ?? null, error: !!error }
+}
+
+/** Wraps the app: with a database configured, nothing shows until this phone has joined with its link. */
 export function AuthGate({ children }: { children: ReactNode }) {
   const [gate, setGate] = useState<Gate>(supabase ? { state: 'loading' } : { state: 'ready' })
 
@@ -26,14 +38,37 @@ export function AuthGate({ children }: { children: ReactNode }) {
       current = userId
       engine?.stop()
       engine = null
-      if (!session) return setGate({ state: 'signed-out' })
+      // Read fresh each time: "Remove this phone" forgets the link before signing out.
+      const link = joinLink()
 
-      const { data: members, error } = await db.from('members').select('person_id, display_name, email')
-      const me = members?.find((m) => m.email === session.user.email?.toLowerCase())
-      if (error || !me) return setGate({ state: 'not-member', email: session.user.email ?? '' })
+      if (!session) {
+        if (!link) return setGate({ state: 'no-access', reason: 'no-link' })
+        const { error } = await db.auth.signInAnonymously()
+        if (error) setGate({ state: 'no-access', reason: 'error', detail: error.message })
+        return // the new session arrives through onAuthStateChange
+      }
 
-      const people = useStore.getState().settings.people.map((p) => ({ ...p, name: members!.find((m) => m.person_id === p.id)?.display_name ?? p.name }))
-      useStore.getState().updateSettings({ me: me.person_id as PersonId, people })
+      const asked = await whoAmI(db)
+      let me = asked.me
+      // No signal: this phone already joined before, so open the copy kept on it.
+      if (asked.error && !me) me = confirmedPerson(session.user.id)
+      if (!me && link && !asked.error) {
+        const { error } = await db.rpc('join_trip', { trip_key: link.key, person: link.me })
+        if (error) {
+          if (/wrong link/i.test(error.message)) {
+            forgetJoinLink()
+            return setGate({ state: 'no-access', reason: 'bad-link' })
+          }
+          return setGate({ state: 'no-access', reason: 'error', detail: error.message })
+        }
+        me = (await whoAmI(db)).me
+      }
+      if (!me) return setGate({ state: 'no-access', reason: link ? 'error' : 'no-link' })
+      rememberPerson(session.user.id, me)
+
+      const { data: members } = await db.from('members').select('person_id, display_name')
+      const people = useStore.getState().settings.people.map((p) => ({ ...p, name: members?.find((m) => m.person_id === p.id)?.display_name ?? p.name }))
+      useStore.getState().updateSettings({ me, people })
       engine = new SyncEngine(db)
       setGate({ state: 'ready' })
       await engine.start()
@@ -52,17 +87,19 @@ export function AuthGate({ children }: { children: ReactNode }) {
   }, [])
 
   if (gate.state === 'loading') return <Centered>Loading…</Centered>
-  if (gate.state === 'signed-out') return <SignIn />
-  if (gate.state === 'not-member')
+  if (gate.state === 'no-access')
     return (
       <Centered>
+        <h1 className="mb-4 text-3xl font-semibold text-ochre-700">Big Lap</h1>
         <Card className="space-y-3">
-          <p>
-            <strong>{gate.email}</strong> isn't one of the two accounts that can use this app.
-          </p>
-          <button className={btnSecondary + ' w-full'} onClick={() => supabase!.auth.signOut()}>
-            Sign out
-          </button>
+          {gate.reason === 'no-link' && <p>This app is private. Open it using your personal link (the one Ethan texted you).</p>}
+          {gate.reason === 'bad-link' && <p>That link doesn't work any more. Ask Ethan for a new one.</p>}
+          {gate.reason === 'error' && (
+            <>
+              <p>Couldn't connect. Check you have signal, then reload the page.</p>
+              {gate.detail && <p className="text-xs text-stone-500">{gate.detail}</p>}
+            </>
+          )}
         </Card>
       </Centered>
     )
@@ -71,77 +108,4 @@ export function AuthGate({ children }: { children: ReactNode }) {
 
 function Centered({ children }: { children: ReactNode }) {
   return <div className="mx-auto flex min-h-screen max-w-sm flex-col justify-center px-4">{children}</div>
-}
-
-function SignIn() {
-  const [email, setEmail] = useState('')
-  const [sent, setSent] = useState(false)
-  const [code, setCode] = useState('')
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-
-  async function send(e: React.FormEvent) {
-    e.preventDefault()
-    setBusy(true)
-    setError(null)
-    const { error } = await supabase!.auth.signInWithOtp({
-      email: email.trim().toLowerCase(),
-      // Never create accounts from here: only the two of us exist.
-      options: { shouldCreateUser: false, emailRedirectTo: window.location.origin + window.location.pathname },
-    })
-    setBusy(false)
-    if (error) setError(/signups? not allowed|not found/i.test(error.message) ? "That email isn't one of the two accounts for this app." : error.message)
-    else setSent(true)
-  }
-
-  async function verify(e: React.FormEvent) {
-    e.preventDefault()
-    setBusy(true)
-    setError(null)
-    const { error } = await supabase!.auth.verifyOtp({ email: email.trim().toLowerCase(), token: code.trim(), type: 'email' })
-    setBusy(false)
-    if (error) setError(/expired|invalid/i.test(error.message) ? 'That code is wrong or has expired. Send a new one.' : error.message)
-  }
-
-  return (
-    <Centered>
-      <h1 className="mb-1 text-3xl font-semibold text-ochre-700">Big Lap</h1>
-      <p className="mb-6 text-stone-600">Sign in with your email. No password needed.</p>
-      <Card>
-        {!sent ? (
-          <form onSubmit={send} className="space-y-4">
-            <Field label="Email">
-              <input type="email" required autoComplete="email" className={inputCls} value={email} onChange={(e) => setEmail(e.target.value)} />
-            </Field>
-            <button className={btnPrimary + ' w-full'} disabled={busy}>
-              {busy ? 'Sending…' : 'Email me a sign-in code'}
-            </button>
-          </form>
-        ) : (
-          <form onSubmit={verify} className="space-y-4">
-            <p className="text-stone-700">
-              We've emailed <strong>{email}</strong>. Open that email <strong>on this phone</strong> and tap <strong>Sign in</strong>.
-            </p>
-            <p className="text-sm text-stone-500">The link only works in the same browser you asked from, and only once. It can take a minute to arrive; check junk mail too.</p>
-            {/* The free email service can't include a code; if a custom email service is added later, the email can carry one. */}
-            <details className="text-sm">
-              <summary className="cursor-pointer text-stone-500">My email has a code instead</summary>
-              <div className="mt-3 space-y-3">
-                <Field label="Code">
-                  <input inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]*" maxLength={10} required className={inputCls + ' text-center text-2xl tracking-[0.4em]'} value={code} onChange={(e) => setCode(e.target.value)} />
-                </Field>
-                <button className={btnPrimary + ' w-full'} disabled={busy}>
-                  {busy ? 'Checking…' : 'Sign in'}
-                </button>
-              </div>
-            </details>
-            <button type="button" className="w-full text-sm text-ochre-700" onClick={() => (setSent(false), setCode(''))}>
-              Use a different email or send again
-            </button>
-          </form>
-        )}
-        {error && <p className="mt-3 text-sm text-red-700">{error}</p>}
-      </Card>
-    </Centered>
-  )
 }

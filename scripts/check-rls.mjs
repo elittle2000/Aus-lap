@@ -2,9 +2,12 @@
 //
 //   node scripts/check-rls.mjs <SUPABASE_URL> <PUBLISHABLE_OR_ANON_KEY> [SERVICE_KEY]
 //
+// Set TRIP_KEY=<the secret in the join links> to also check that a phone with
+// the right link gets in (it joins as Ethan, then the test phone is removed).
+//
 // With just the public key it checks what a signed-out visitor can do (nothing).
 // With the service key as well (local stack only, never the hosted one) it also
-// creates a stranger and a member and checks what each can do.
+// seeds data and, with TRIP_KEY, checks what a joined phone can do.
 
 import { createClient } from '@supabase/supabase-js'
 
@@ -57,6 +60,37 @@ await expectLockedOut(createClient(url, anonKey, opts), 'signed out')
 const ping = await createClient(url, anonKey, opts).rpc('ping')
 check(ping.data === 'ok', `signed out: the keep-awake ping answers "ok" and nothing else (got ${JSON.stringify(ping.data ?? ping.error?.message)})`)
 
+// Anyone can start an anonymous session; without the secret link they must get nothing.
+console.log('\nAnonymous session without the link:')
+const anonSession = createClient(url, anonKey, opts)
+const anonSignIn = await anonSession.auth.signInAnonymously()
+if (anonSignIn.error) {
+  console.log(`  (anonymous sign-ins are switched off: ${anonSignIn.error.message})`)
+} else {
+  await expectLockedOut(anonSession, 'anonymous')
+  const guess = await anonSession.rpc('join_trip', { trip_key: 'guess-' + rid(), person: 'ethan' })
+  check(!!guess.error, `anonymous: joining with a guessed link is refused${guess.error ? ` (${guess.error.message})` : ''}`)
+  const keys = await anonSession.from('trip_keys').select('*')
+  check(!!keys.error || keys.data.length === 0, 'anonymous: the stored link secret cannot be read')
+  const devices = await anonSession.from('devices').insert({ user_id: anonSignIn.data.user.id, person_id: 'ethan' })
+  check(!!devices.error, 'anonymous: cannot add itself to the trip directly')
+  await expectLockedOut(anonSession, 'anonymous after failed join')
+
+  if (process.env.TRIP_KEY) {
+    console.log('\nPhone opening the real link:')
+    const phone = createClient(url, anonKey, opts)
+    const s = await phone.auth.signInAnonymously()
+    const joined = await phone.rpc('join_trip', { trip_key: process.env.TRIP_KEY, person: 'ethan' })
+    check(!s.error && joined.data === 'ethan', 'joining with the right link works')
+    const me = await phone.rpc('current_person')
+    check(me.data === 'ethan', 'the phone is recognised as Ethan')
+    const read = await phone.from('app_settings').select('key')
+    check(!read.error, 'the joined phone can read the trip')
+    // Remove the test phone again (needs the service key; otherwise it just stays as an unused session).
+    if (serviceKey) await createClient(url, serviceKey, opts).auth.admin.deleteUser(s.data.user.id)
+  }
+}
+
 if (serviceKey) {
   const admin = createClient(url, serviceKey, opts)
 
@@ -66,22 +100,14 @@ if (serviceKey) {
   const seeded = await admin.from('prep_items').select('id')
   check(seeded.data?.length > 0, 'service role can see the seeded data (so the empty results above are real hiding)')
 
-  async function signedIn(email) {
-    const password = `pw-${rid()}`
-    const found = (await admin.auth.admin.listUsers()).data.users.find((u) => u.email === email)
-    if (found) await admin.auth.admin.updateUserById(found.id, { password })
-    else await admin.auth.admin.createUser({ email, password, email_confirm: true })
-    const c = createClient(url, anonKey, opts)
-    const { error } = await c.auth.signInWithPassword({ email, password })
-    if (error) throw new Error(`sign-in for ${email}: ${error.message}`)
-    return c
-  }
-
-  console.log('\nSigned in, but not on the members list:')
-  await expectLockedOut(await signedIn('stranger@example.test'), 'stranger')
-
-  console.log('\nMember (ethan@example.test):')
-  const ethan = await signedIn('ethan@example.test')
+  // A member here is a phone that joined with the real link (needs TRIP_KEY).
+  if (!process.env.TRIP_KEY) {
+    console.log('\n(Set TRIP_KEY to also run the member checks.)')
+  } else {
+  console.log('\nMember (a phone that joined as Ethan):')
+  const ethan = createClient(url, anonKey, opts)
+  const ethanSession = await ethan.auth.signInAnonymously()
+  await ethan.rpc('join_trip', { trip_key: process.env.TRIP_KEY, person: 'ethan' })
   const id = rid()
   const ins = await ethan.from('prep_items').insert({ id, data: { item: 'member test' }, updated_by: 'dana' }).select().single()
   check(!ins.error, 'member can add a prep item')
@@ -104,11 +130,15 @@ if (serviceKey) {
   check(!!signedUrl.data?.signedUrl, 'member can open their receipt photo')
   const anonFile = await createClient(url, anonKey, opts).storage.from('receipts').download(path)
   check(!!anonFile.error, 'a signed-out visitor cannot download that receipt')
+  const strangerFile = await anonSession.storage.from('receipts').download(path)
+  check(!!strangerFile.error, 'an anonymous session without the link cannot download it either')
 
   // Tidy up
   await admin.from('prep_items').delete().in('id', [id, '11111111-1111-1111-1111-111111111111'])
   await admin.from('change_log').delete().eq('id', editLog.data?.id)
   await admin.storage.from('receipts').remove([path])
+  await admin.auth.admin.deleteUser(ethanSession.data.user.id)
+  }
 }
 
 console.log(failures ? `\n${failures} check(s) FAILED` : '\nAll checks passed.')

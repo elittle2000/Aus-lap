@@ -38,13 +38,18 @@ export default function MorePage() {
         <Card className="space-y-3">
           <SectionTitle>Account</SectionTitle>
           <p>
-            Signed in as <strong>{personName(settings.people, settings.me)}</strong>. Changes sync to {settings.people.find((p) => p.id !== settings.me)?.name ?? 'the other phone'} automatically.
+            This phone is <strong>{personName(settings.people, settings.me)}</strong>'s. Changes sync to {settings.people.find((p) => p.id !== settings.me)?.name ?? 'the other phone'} automatically.
           </p>
           <button
             className={btnSecondary + ' w-full'}
-            onClick={() => (!pending || confirm(`${pending} change${pending === 1 ? " hasn't" : "s haven't"} synced yet and will be lost. Sign out anyway?`)) && signOut()}
+            onClick={() =>
+              confirm(
+                (pending ? `${pending} change${pending === 1 ? " hasn't" : "s haven't"} synced yet and will be lost. ` : '') +
+                  "Remove this phone from the trip? You'll need your private link to get back in.",
+              ) && signOut()
+            }
           >
-            Sign out
+            Remove this phone
           </button>
         </Card>
       ) : (
