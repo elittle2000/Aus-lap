@@ -21,9 +21,8 @@ Keep this page open and go top to bottom. Where it says "send to Claude", paste 
 ### 2. Create the tables and access rules
 
 1. In the left sidebar click **SQL Editor**, then **New query**.
-2. Open [`supabase/migrations/20261006000000_init.sql`](../supabase/migrations/20261006000000_init.sql) on GitHub, click the **Copy raw file** button, paste it into the editor and click **Run**. It should say *Success. No rows returned*.
-3. Click **New query** again and do the same with [`supabase/migrations/20261006000100_keep_awake.sql`](../supabase/migrations/20261006000100_keep_awake.sql).
-4. New query once more. Paste the **members** snippet Claude gave you in the chat (it has your two email addresses, which are deliberately not stored on GitHub) and click **Run**.
+2. Paste in **the whole SQL block Claude gave you in the chat** (it's the two files in [`supabase/migrations/`](https://github.com/elittle2000/Aus-lap/tree/claude/great-edison-atyas0/supabase/migrations) plus your two email addresses, which are deliberately not stored on GitHub) and click **Run** (bottom right, or Ctrl/Cmd + Enter).
+3. It should say **Success. No rows returned**. If it shows a red error instead, copy the error text to Claude.
 
 ### 3. Lock down sign-in
 
@@ -45,7 +44,7 @@ Supabase's built-in email only delivers to people on your Supabase team, and onl
 
 1. Sidebar: **Authentication** → **Emails** → **Magic Link**.
 2. Subject: `Your Big Lap sign-in code`
-3. Body: open [`supabase/templates/magic_link.html`](../supabase/templates/magic_link.html) on GitHub, copy the raw file, and paste it over the existing body. Click **Save**.
+3. Body: paste the email body Claude gave you in the chat over the existing body (it's also in [`supabase/templates/magic_link.html`](https://github.com/elittle2000/Aus-lap/blob/claude/great-edison-atyas0/supabase/templates/magic_link.html)). Click **Save**.
 
 The email then contains a 6-digit code as well as a link. On iPhone, an app added to the home screen can't receive a tapped link, so you type the code instead.
 
