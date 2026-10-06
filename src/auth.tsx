@@ -119,15 +119,22 @@ function SignIn() {
           </form>
         ) : (
           <form onSubmit={verify} className="space-y-4">
-            <p className="text-sm text-stone-700">
-              We've emailed <strong>{email}</strong>. Type the 6-digit code here, or tap the link in the email.
+            <p className="text-stone-700">
+              We've emailed <strong>{email}</strong>. Open that email <strong>on this phone</strong> and tap <strong>Sign in</strong>.
             </p>
-            <Field label="Code">
-              <input inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]*" maxLength={10} required className={inputCls + ' text-center text-2xl tracking-[0.4em]'} value={code} onChange={(e) => setCode(e.target.value)} />
-            </Field>
-            <button className={btnPrimary + ' w-full'} disabled={busy}>
-              {busy ? 'Checking…' : 'Sign in'}
-            </button>
+            <p className="text-sm text-stone-500">The link only works in the same browser you asked from, and only once. It can take a minute to arrive; check junk mail too.</p>
+            {/* The free email service can't include a code; if a custom email service is added later, the email can carry one. */}
+            <details className="text-sm">
+              <summary className="cursor-pointer text-stone-500">My email has a code instead</summary>
+              <div className="mt-3 space-y-3">
+                <Field label="Code">
+                  <input inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]*" maxLength={10} required className={inputCls + ' text-center text-2xl tracking-[0.4em]'} value={code} onChange={(e) => setCode(e.target.value)} />
+                </Field>
+                <button className={btnPrimary + ' w-full'} disabled={busy}>
+                  {busy ? 'Checking…' : 'Sign in'}
+                </button>
+              </div>
+            </details>
             <button type="button" className="w-full text-sm text-ochre-700" onClick={() => (setSent(false), setCode(''))}>
               Use a different email or send again
             </button>
